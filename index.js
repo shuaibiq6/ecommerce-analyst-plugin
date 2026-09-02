@@ -6385,7 +6385,7 @@ async function parseWeeklyRankExcel(buffer) {
     const out2 = [];
     for (let r = subIdx + 1; r < rows.length; r++) {
       const row = rows[r] ?? [];
-      if (!data(0, row) && !data(1, row)) continue;
+      if (!data(1, row) && !data(2, row)) continue;
       out2.push({
         shop: data(0, row),
         linkName: data(1, row),
@@ -6548,12 +6548,22 @@ async function parseMonthlyRankExcel(buffer) {
   const ws = wb.Sheets[name2];
   if (!ws) return null;
   const rows = xlsx.utils.sheet_to_json(ws, { header: 1, defval: "", raw: false });
+  const hasSales = (r) => r.some((c2) => String(c2 ?? "").trim() === "\u9500\u552E\u989D");
   let subIdx = -1;
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i] ?? [];
-    if (r.some((c) => String(c ?? "").trim() === "\u9500\u552E\u989D")) {
+    if (!hasSales(r)) continue;
+    if ([0, 1, 2].every((j) => String(r[j] ?? "").trim() === "")) {
       subIdx = i;
       break;
+    }
+  }
+  if (subIdx === -1) {
+    for (let i = 0; i < rows.length; i++) {
+      if (hasSales(rows[i] ?? [])) {
+        subIdx = i;
+        break;
+      }
     }
   }
   if (subIdx < 1) return null;
@@ -6571,106 +6581,211 @@ async function parseMonthlyRankExcel(buffer) {
   }
   const kind = showForm.includes("\u89C4\u683C") ? "systemSkus" : showForm.includes("\u5E73\u53F0") ? "platformLinks" : showForm.includes("\u8D27\u54C1") ? "systemProducts" : "platformLinks";
   const data = (i, row) => String(row[i] ?? "").trim();
+  const sub = rows[subIdx] ?? [];
+  const colBy = (name3, fallback) => {
+    const i = sub.findIndex((c2) => String(c2 ?? "").trim() === name3);
+    return i >= 0 ? i : fallback;
+  };
+  const colNth = (name3, n, fallback) => {
+    let seen = 0;
+    for (let i = 0; i < sub.length; i++) {
+      if (String(sub[i] ?? "").trim() === name3) {
+        if (seen === n) return i;
+        seen++;
+      }
+    }
+    return fallback;
+  };
+  const head = subIdx >= 1 ? rows[subIdx - 1] ?? [] : [];
+  const headCol = (name3, fallback) => {
+    const i = head.findIndex((c2) => String(c2 ?? "").trim() === name3);
+    return i >= 0 ? i : fallback;
+  };
   if (kind === "platformLinks") {
+    const id2 = {
+      shop: headCol("\u5E97\u94FA", 0),
+      linkName: headCol("\u94FE\u63A5\u540D\u79F0", 1),
+      linkId: headCol("\u94FE\u63A5ID", 2),
+      linkCode: headCol("\u94FE\u63A5\u7F16\u7801", 3),
+      linkTag: headCol("\u94FE\u63A5\u6807\u7B7E", 4)
+    };
+    const c2 = {
+      sales: colBy("\u9500\u552E\u989D", 5),
+      salesCount: colBy("\u9500\u552E\u4EF6\u6570", 6),
+      salesCost: colBy("\u9500\u552E\u6210\u672C", 7),
+      grossProfit: colBy("\u6BDB\u5229\u989D", 8),
+      grossMargin: colBy("\u6BDB\u5229\u7387", 9),
+      refundAmount: colBy("\u9000\u6B3E\u91D1\u989D", 10),
+      refundRate: colBy("\u9000\u6B3E\u7387", 11),
+      returnRate: colBy("\u9000\u8D27\u6BD4\u4F8B", 12),
+      netSales: colBy("\u51C0\u9500\u552E\u989D", 13),
+      adSpend: colBy("\u63A8\u5E7F\u6295\u653E\u8D39\u7528", 14),
+      fullConv: colBy("\u5168\u94FE\u8DEF\u652F\u4ED8\u8F6C\u5316\u7387", 15),
+      realConv: colBy("\u771F\u5B9E\u652F\u4ED8\u8F6C\u5316\u7387\uFF08\u6263\u9664\u7279\u6B8A\u5355\uFF09", 16),
+      views: colBy("\u6D4F\u89C8\u91CF", 17),
+      visitors: colBy("\u8BBF\u5BA2\u6570", 18),
+      favCount: colBy("\u6536\u85CF\u4EBA\u6570", 19),
+      favRate: colBy("\u6536\u85CF\u7387", 20),
+      cartCount: colBy("\u52A0\u8D2D\u4EBA\u6570", 21),
+      cartQty: colBy("\u52A0\u8D2D\u4EF6\u6570", 22),
+      cartRate: colBy("\u52A0\u8D2D\u7387", 23),
+      orderCount: colBy("\u4E0B\u5355\u4EBA\u6570", 24),
+      orderQty: colBy("\u4E0B\u5355\u4EF6\u6570", 25),
+      orderRate: colBy("\u4E0B\u5355\u7387", 26),
+      payCount: colBy("\u652F\u4ED8\u4EBA\u6570", 27),
+      payQty: colBy("\u652F\u4ED8\u4EF6\u6570", 28),
+      payRate: colBy("\u652F\u4ED8\u7387", 29),
+      searchVisitors: colBy("\u641C\u7D22\u5F15\u5BFC\u8BBF\u5BA2\u6570", 30),
+      searchPayCount: colBy("\u641C\u7D22\u5F15\u5BFC\u652F\u4ED8\u4EBA\u6570", 31),
+      searchConv: colBy("\u641C\u7D22\u5F15\u5BFC\u652F\u4ED8\u8F6C\u5316\u7387", 32),
+      avgPrice: colBy("\u5E73\u5747\u5355\u4EF7", 33)
+    };
     const out2 = [];
     for (let r = subIdx + 1; r < rows.length; r++) {
       const row = rows[r] ?? [];
-      if (!data(0, row) && !data(1, row)) continue;
+      if (!data(id2.linkName, row) && !data(id2.linkId, row)) continue;
       out2.push({
-        shop: data(0, row),
-        linkName: data(1, row),
-        linkId: data(2, row),
-        linkCode: data(3, row),
-        linkTag: data(4, row),
-        sales: toNum2(row[5]),
-        salesCount: toNum2(row[6]),
-        salesCost: toNum2(row[7]),
-        grossProfit: toNum2(row[8]),
-        grossMargin: toRate2(row[9]),
-        refundAmount: toNum2(row[10]),
-        refundRate: toRate2(row[11]),
-        returnRate: toRate2(row[12]),
-        netSales: toNum2(row[13]),
-        adSpend: toNum2(row[14]),
-        fullConv: toRate2(row[15]),
-        realConv: toRate2(row[16]),
-        views: toNum2(row[17]),
-        visitors: toNum2(row[18]),
-        favCount: toNum2(row[19]),
-        favRate: toRate2(row[20]),
-        cartCount: toNum2(row[21]),
-        cartQty: toNum2(row[22]),
-        cartRate: toRate2(row[23]),
-        orderCount: toNum2(row[24]),
-        orderQty: toNum2(row[25]),
-        orderRate: toRate2(row[26]),
-        payCount: toNum2(row[27]),
-        payQty: toNum2(row[28]),
-        payRate: toRate2(row[29]),
-        searchVisitors: toNum2(row[30]),
-        searchPayCount: toNum2(row[31]),
-        searchConv: toRate2(row[32]),
-        avgPrice: toNum2(row[33])
+        shop: data(id2.shop, row),
+        linkName: data(id2.linkName, row),
+        linkId: data(id2.linkId, row),
+        linkCode: data(id2.linkCode, row),
+        linkTag: data(id2.linkTag, row),
+        sales: toNum2(row[c2.sales]),
+        salesCount: toNum2(row[c2.salesCount]),
+        salesCost: toNum2(row[c2.salesCost]),
+        grossProfit: toNum2(row[c2.grossProfit]),
+        grossMargin: toRate2(row[c2.grossMargin]),
+        refundAmount: toNum2(row[c2.refundAmount]),
+        refundRate: toRate2(row[c2.refundRate]),
+        returnRate: toRate2(row[c2.returnRate]),
+        netSales: toNum2(row[c2.netSales]),
+        adSpend: toNum2(row[c2.adSpend]),
+        fullConv: toRate2(row[c2.fullConv]),
+        realConv: toRate2(row[c2.realConv]),
+        views: toNum2(row[c2.views]),
+        visitors: toNum2(row[c2.visitors]),
+        favCount: toNum2(row[c2.favCount]),
+        favRate: toRate2(row[c2.favRate]),
+        cartCount: toNum2(row[c2.cartCount]),
+        cartQty: toNum2(row[c2.cartQty]),
+        cartRate: toRate2(row[c2.cartRate]),
+        orderCount: toNum2(row[c2.orderCount]),
+        orderQty: toNum2(row[c2.orderQty]),
+        orderRate: toRate2(row[c2.orderRate]),
+        payCount: toNum2(row[c2.payCount]),
+        payQty: toNum2(row[c2.payQty]),
+        payRate: toRate2(row[c2.payRate]),
+        searchVisitors: toNum2(row[c2.searchVisitors]),
+        searchPayCount: toNum2(row[c2.searchPayCount]),
+        searchConv: toRate2(row[c2.searchConv]),
+        avgPrice: toNum2(row[c2.avgPrice])
       });
       if (out2.length >= 5e3) break;
     }
     return out2.length ? { kind, period, month: monthOf(period), shops, platformLinks: out2 } : null;
   }
   if (kind === "systemProducts") {
+    const id2 = {
+      name: headCol("\u7CFB\u7EDF\u8D27\u54C1\u540D\u79F0", 0),
+      code: headCol("\u8D27\u54C1\u7F16\u53F7", 1),
+      brand: headCol("\u54C1\u724C", 2),
+      category: headCol("\u5206\u7C7B", 3)
+    };
+    const c2 = {
+      sales: colBy("\u9500\u552E\u989D", 4),
+      grossProfit: colBy("\u6BDB\u5229\u989D", 5),
+      grossMargin: colBy("\u6BDB\u5229\u7387", 6),
+      refundRate: colBy("\u9000\u6B3E\u7387", 7),
+      returnRate: colBy("\u9000\u8D27\u6BD4\u4F8B", 8),
+      netSales: colBy("\u51C0\u9500\u552E\u989D", 9),
+      adSpend: colBy("\u63A8\u5E7F\u6295\u653E\u8D39\u7528", 10),
+      avgPrice: colBy("\u5E73\u5747\u5355\u4EF7", 11),
+      singleRate: colBy("\u5355\u4EF6\u7387", 12)
+    };
     const out2 = [];
     for (let r = subIdx + 1; r < rows.length; r++) {
       const row = rows[r] ?? [];
-      if (!data(0, row)) continue;
+      if (!data(id2.name, row)) continue;
       out2.push({
-        name: data(0, row),
-        code: data(1, row),
-        brand: data(2, row),
-        category: data(3, row),
-        sales: toNum2(row[4]),
-        grossProfit: toNum2(row[5]),
-        grossMargin: toRate2(row[6]),
-        refundRate: toRate2(row[7]),
-        returnRate: toRate2(row[8]),
-        netSales: toNum2(row[9]),
-        adSpend: toNum2(row[10]),
-        avgPrice: toNum2(row[11]),
-        singleRate: toRate2(row[12])
+        name: data(id2.name, row),
+        code: data(id2.code, row),
+        brand: data(id2.brand, row),
+        category: data(id2.category, row),
+        sales: toNum2(row[c2.sales]),
+        grossProfit: toNum2(row[c2.grossProfit]),
+        grossMargin: toRate2(row[c2.grossMargin]),
+        refundRate: toRate2(row[c2.refundRate]),
+        returnRate: toRate2(row[c2.returnRate]),
+        netSales: toNum2(row[c2.netSales]),
+        adSpend: toNum2(row[c2.adSpend]),
+        avgPrice: toNum2(row[c2.avgPrice]),
+        singleRate: toRate2(row[c2.singleRate])
       });
       if (out2.length >= 5e3) break;
     }
     return out2.length ? { kind, period, month: monthOf(period), shops, systemProducts: out2 } : null;
   }
+  const id = {
+    name: headCol("\u7CFB\u7EDF\u8D27\u54C1\u540D\u79F0", 0),
+    specName: headCol("\u7CFB\u7EDF\u89C4\u683C\u540D\u79F0", 1),
+    code: headCol("\u5546\u5BB6\u7F16\u7801", 2),
+    brand: headCol("\u54C1\u724C", 3),
+    category: headCol("\u5206\u7C7B", 4)
+  };
+  const c = {
+    salesRank: colBy("\u6392\u540D\uFF08\u9500\u552E\u989D\uFF09", 5),
+    sales: colBy("\u9500\u552E\u989D", 6),
+    countRank: colBy("\u6392\u540D\uFF08\u9500\u552E\u4EF6\u6570\uFF09", 7),
+    salesCount: colBy("\u9500\u552E\u4EF6\u6570", 8),
+    salesCost: colBy("\u9500\u552E\u6210\u672C", 9),
+    profitRank: colNth("\u6392\u540D", 0, 10),
+    grossProfit: colBy("\u6BDB\u5229\u989D", 11),
+    marginRank: colNth("\u6392\u540D", 1, 12),
+    grossMargin: colBy("\u6BDB\u5229\u7387", 13),
+    refundAmount: colBy("\u9000\u6B3E\u91D1\u989D", 14),
+    refundRate: colNth("\u9000\u6B3E\u7387", 0, 15),
+    returnRate: colBy("\u9000\u8D27\u6BD4\u4F8B", 16),
+    preShipRefundRate: colNth("\u9000\u6B3E\u7387", 1, 17),
+    postShipRefundRate: colNth("\u9000\u6B3E\u7387", 2, 18),
+    receivedRefundRate: colNth("\u9000\u6B3E\u7387", 3, 19),
+    netSales: colBy("\u51C0\u9500\u552E\u989D", 20),
+    netCost: colBy("\u51C0\u9500\u552E\u6210\u672C", 21),
+    adSpend: colBy("\u63A8\u5E7F\u6295\u653E\u8D39\u7528", 22),
+    offlineFee: colBy("\u7EBF\u4E0B\u8D39\u7528", 23),
+    otherFee: colBy("\u5176\u4ED6", 24),
+    avgPrice: colBy("\u5E73\u5747\u5355\u4EF7", 25)
+  };
   const out = [];
   for (let r = subIdx + 1; r < rows.length; r++) {
     const row = rows[r] ?? [];
-    if (!data(0, row) && !data(1, row)) continue;
+    if (!data(id.name, row) && !data(id.specName, row)) continue;
     out.push({
-      name: data(0, row),
-      specName: data(1, row),
-      code: data(2, row),
-      brand: data(3, row),
-      category: data(4, row),
-      salesRank: toRank2(row[5]),
-      sales: toNum2(row[6]),
-      countRank: toRank2(row[7]),
-      salesCount: toNum2(row[8]),
-      salesCost: toNum2(row[9]),
-      profitRank: toRank2(row[10]),
-      grossProfit: toNum2(row[11]),
-      marginRank: toRank2(row[12]),
-      grossMargin: toRate2(row[13]),
-      refundAmount: toNum2(row[14]),
-      refundRate: toRate2(row[15]),
-      returnRate: toRate2(row[16]),
-      preShipRefundRate: toRate2(row[17]),
-      postShipRefundRate: toRate2(row[18]),
-      receivedRefundRate: toRate2(row[19]),
-      netSales: toNum2(row[20]),
-      netCost: toNum2(row[21]),
-      adSpend: toNum2(row[22]),
-      offlineFee: toNum2(row[23]),
-      otherFee: toNum2(row[24]),
-      avgPrice: toNum2(row[25])
+      name: data(id.name, row),
+      specName: data(id.specName, row),
+      code: data(id.code, row),
+      brand: data(id.brand, row),
+      category: data(id.category, row),
+      salesRank: toRank2(row[c.salesRank]),
+      sales: toNum2(row[c.sales]),
+      countRank: toRank2(row[c.countRank]),
+      salesCount: toNum2(row[c.salesCount]),
+      salesCost: toNum2(row[c.salesCost]),
+      profitRank: toRank2(row[c.profitRank]),
+      grossProfit: toNum2(row[c.grossProfit]),
+      marginRank: toRank2(row[c.marginRank]),
+      grossMargin: toRate2(row[c.grossMargin]),
+      refundAmount: toNum2(row[c.refundAmount]),
+      refundRate: toRate2(row[c.refundRate]),
+      returnRate: toRate2(row[c.returnRate]),
+      preShipRefundRate: toRate2(row[c.preShipRefundRate]),
+      postShipRefundRate: toRate2(row[c.postShipRefundRate]),
+      receivedRefundRate: toRate2(row[c.receivedRefundRate]),
+      netSales: toNum2(row[c.netSales]),
+      netCost: toNum2(row[c.netCost]),
+      adSpend: toNum2(row[c.adSpend]),
+      offlineFee: toNum2(row[c.offlineFee]),
+      otherFee: toNum2(row[c.otherFee]),
+      avgPrice: toNum2(row[c.avgPrice])
     });
     if (out.length >= 5e3) break;
   }
@@ -6698,12 +6813,12 @@ async function parseStoreProfitExcel(buffer) {
   }
   if (headerIdx === -1) return null;
   const header = rows[headerIdx] ?? [];
-  const stores = [];
+  const storeCols = [];
   for (let c = 1; c < header.length; c++) {
     const s = String(header[c] ?? "").trim();
-    if (s && s !== "\u5408\u8BA1") stores.push(s);
+    if (s && s !== "\u5408\u8BA1") storeCols.push({ store: s, col: c });
   }
-  if (!stores.length) return null;
+  if (!storeCols.length) return null;
   const metricKey = (m) => {
     const s = String(m ?? "").trim();
     if (s === "\u4E00\u3001\u9500\u552E\u6536\u5165") return "sales";
@@ -6715,7 +6830,7 @@ async function parseStoreProfitExcel(buffer) {
     if (s === "\u4E03\u3001\u8FD0\u8425\u63A8\u5E7F\u8D39\u7528") return "promoCost";
     return null;
   };
-  const acc = stores.map((store) => {
+  const acc = storeCols.map(({ store }) => {
     const row = { store };
     return row;
   });
@@ -6724,8 +6839,7 @@ async function parseStoreProfitExcel(buffer) {
     const r = rows[i] ?? [];
     const key = metricKey(String(r[0] ?? ""));
     if (!key) continue;
-    stores.forEach((_, si) => {
-      const col = si + 1;
+    storeCols.forEach(({ col }, si) => {
       const v = r[col];
       acc[si][key] = isRate(key) ? toRate2(v) : toNum2(v);
     });
@@ -7307,7 +7421,7 @@ var EcommerceStore = class {
   }
   overview(range = {}) {
     const revOrders = this.revenueOrders(range);
-    const revenue = revOrders.reduce((sum, o) => sum + toCents(o.amount), 0);
+    const revenue = revOrders.reduce((sum2, o) => sum2 + toCents(o.amount), 0);
     const revenueYuan = fromCents(revenue);
     const total = this.orders.filter((o) => this.inRange(o, range)).length;
     const refunded = this.orders.filter(
@@ -8792,11 +8906,15 @@ async function parseImportFile(filename, content, encoding = "utf8") {
     }
     case "pdf": {
       const buf = encoding === "base64" ? Buffer.from(content, "base64") : Buffer.from(content, "utf8");
-      const r = await parsePdfBuffer(buf);
-      return { ...r, hint: "PDF \u5BFC\u5165\uFF1A" + (r.products?.length ?? 0) + " \u4EF6\u5546\u54C1 / " + (r.orders?.length ?? 0) + " \u7B14\u8BA2\u5355" };
+      try {
+        const r = await parsePdfBuffer(buf);
+        return { ...r, hint: "PDF \u5BFC\u5165\uFF1A" + (r.products?.length ?? 0) + " \u4EF6\u5546\u54C1 / " + (r.orders?.length ?? 0) + " \u7B14\u8BA2\u5355" };
+      } catch (e) {
+        return { hint: "PDF \u5BFC\u5165\u5931\u8D25\uFF1A" + (e instanceof Error ? e.message : String(e)) };
+      }
     }
     default:
-      throw new Error("\u6682\u4E0D\u652F\u6301\u7684\u6587\u4EF6\u7C7B\u578B\uFF1A." + ext + "\uFF08\u652F\u6301 csv/txt/json/xlsx/xls/sql/pdf\uFF09");
+      return { hint: "\u5DF2\u8DF3\u8FC7\u4E0D\u652F\u6301\u7684\u6587\u4EF6\uFF1A." + ext + "\uFF08\u4EC5\u89E3\u6790 csv/txt/json/xlsx/xls/sql/pdf\uFF09" };
   }
 }
 
@@ -9097,6 +9215,143 @@ function ordersToCsv(orders) {
   );
 }
 
+// src/data-evaluation.ts
+import { randomUUID } from "node:crypto";
+function fmtMoney(v) {
+  const n = Number(v) || 0;
+  if (n >= 1e4) return "\xA5" + (n / 1e4).toFixed(1) + "\u4E07";
+  return "\xA5" + Math.round(n).toLocaleString("zh-CN");
+}
+function sum(rows, field) {
+  return rows.reduce((s, r) => s + (Number(r[field]) || 0), 0);
+}
+function pickRows(rep) {
+  if (!rep) return [];
+  const links = rep.platformLinks;
+  if (links && links.length) {
+    return links.map((l) => ({
+      name: String(l.linkName ?? l.linkId ?? ""),
+      sales: Number(l.sales) || 0,
+      netSales: Number(l.netSales) || 0,
+      adSpend: Number(l.adSpend) || 0,
+      refundAmount: Number(l.refundAmount) || 0,
+      refundRate: Number(l.refundRate) || 0
+    }));
+  }
+  const products = rep.systemProducts;
+  if (products && products.length) {
+    return products.map((p) => ({
+      name: String(p.name ?? ""),
+      sales: Number(p.sales) || 0,
+      netSales: Number(p.netSales) || 0,
+      adSpend: Number(p.adSpend) || 0,
+      refundAmount: 0,
+      refundRate: Number(p.refundRate) || 0
+    }));
+  }
+  const skus = rep.systemSkus;
+  if (skus && skus.length) {
+    return skus.map((s) => ({
+      name: String(s.specName ?? s.name ?? ""),
+      sales: Number(s.sales) || 0,
+      netSales: Number(s.netSales) || 0,
+      adSpend: Number(s.adSpend) || 0,
+      refundAmount: Number(s.refundAmount) || 0,
+      refundRate: Number(s.refundRate) || 0
+    }));
+  }
+  return [];
+}
+function buildEvaluationSummary(cycle, monthlyReport, weeklyReport) {
+  const rep = cycle === "7d" ? weeklyReport : monthlyReport;
+  const rows = pickRows(rep);
+  if (!rows.length) return null;
+  const totalSales = sum(rows, "sales");
+  const totalNet = sum(rows, "netSales");
+  const totalAd = sum(rows, "adSpend");
+  const totalRefund = sum(rows, "refundAmount");
+  const feeRatio = totalNet > 0 ? totalAd / totalNet * 100 : 0;
+  const refundRate = totalSales > 0 ? totalRefund / totalSales * 100 : sum(rows, "refundRate") / rows.length;
+  const top = [...rows].sort((a, b) => (Number(b.netSales) || 0) - (Number(a.netSales) || 0))[0];
+  const topShare = totalNet > 0 && top ? (Number(top.netSales) || 0) / totalNet * 100 : 0;
+  const period = String(rep.period ?? (cycle === "7d" ? "\u672C\u5468" : "\u672C\u6708"));
+  return {
+    cycle,
+    period,
+    totalSales,
+    totalNet,
+    totalAd,
+    feeRatio,
+    totalRefund,
+    refundRate,
+    itemCount: rows.length,
+    topItem: String(top?.name ?? ""),
+    topShare
+  };
+}
+function ruleBasedEvaluation(s) {
+  const periodLabel = s.cycle === "7d" ? "\u672C\u5468" : "\u672C\u6708";
+  const issues = [];
+  if (s.feeRatio > 20) issues.push("\u63A8\u5E7F\u8D39\u6BD4\u504F\u9AD8");
+  if (s.refundRate > 10) issues.push("\u9000\u6B3E\u7387\u504F\u9AD8");
+  if (s.topShare > 40) issues.push("\u5934\u90E8\u5546\u54C1\u5360\u6BD4\u8FC7\u9AD8");
+  const verdict = issues.length ? issues.join("\u3001") + "\uFF0C\u5EFA\u8BAE\u4F18\u5316\u5BF9\u5E94\u73AF\u8282" : "\u9500\u552E\u4E0E\u8D39\u6548\u6574\u4F53\u5E73\u7A33";
+  const text = `${periodLabel}\u9500\u552E\u989D${fmtMoney(s.totalSales)}\uFF0C\u5728\u9500\u5546\u54C1${s.itemCount}\u4E2A\uFF0C\u8D39\u6BD4${s.feeRatio.toFixed(1)}%\uFF0C\u9000\u6B3E\u7387${s.refundRate.toFixed(1)}%\uFF1B${verdict}\u3002`;
+  return text.length > 80 ? text.slice(0, 80) : text;
+}
+function evaluationPrompt(s) {
+  const periodLabel = s.cycle === "7d" ? "\u672C\u5468" : "\u672C\u6708";
+  return [
+    `\u8BF7\u57FA\u4E8E\u4EE5\u4E0B${periodLabel}\u7535\u5546\u7ECF\u8425\u6570\u636E\uFF0C\u4ECE\u300C\u9500\u552E\u989D\u3001\u4EA7\u54C1\u3001\u63A8\u5E7F\u3001\u9000\u6B3E\u300D\u56DB\u4E2A\u89D2\u5EA6\u505A\u4E00\u53E5\u603B\u4F53\u6570\u636E\u8BC4\u4EF7\u3002`,
+    `- \u5468\u671F\uFF1A${s.period}`,
+    `- \u9500\u552E\u989D\uFF1A${fmtMoney(s.totalSales)}\uFF08\u51C0\u9500 ${fmtMoney(s.totalNet)}\uFF09`,
+    `- \u4EA7\u54C1\uFF1A\u5728\u9500\u5546\u54C1 ${s.itemCount} \u4E2A\uFF0C\u5934\u90E8\u5546\u54C1\u300C${s.topItem}\u300D\u51C0\u9500\u5360\u6BD4 ${s.topShare.toFixed(1)}%`,
+    `- \u63A8\u5E7F\uFF1A\u63A8\u5E7F\u8D39 ${fmtMoney(s.totalAd)}\uFF0C\u6574\u4F53\u8D39\u6BD4 ${s.feeRatio.toFixed(1)}%`,
+    `- \u9000\u6B3E\uFF1A\u9000\u6B3E\u91D1\u989D ${fmtMoney(s.totalRefund)}\uFF0C\u9000\u6B3E\u7387 ${s.refundRate.toFixed(1)}%`,
+    "",
+    "\u8981\u6C42\uFF1A\u4EC5\u8F93\u51FA\u4E00\u53E5 40~80 \u5B57\u7684\u4E2D\u6587\u8BC4\u4EF7\uFF08\u542B\u6807\u70B9\uFF09\uFF0C\u4E0D\u8981\u6807\u9898\u3001\u4E0D\u8981\u6362\u884C\u3001\u4E0D\u8981\u5217\u8868\u7B26\u53F7\u3001\u4E0D\u8981\u4EFB\u4F55\u89E3\u91CA\u3002"
+  ].join("\n");
+}
+var EVAL_SYSTEM = "\u4F60\u662F\u8D44\u6DF1\u7535\u5546\u6570\u636E\u5206\u6790\u5E08\uFF0C\u5584\u4E8E\u7528\u4E00\u53E5\u8BDD\u7CBE\u51C6\u6982\u62EC\u7ECF\u8425\u6570\u636E\u5E76\u7ED9\u51FA\u53EF\u6267\u884C\u5EFA\u8BAE\u3002";
+function cleanEvaluationText(raw) {
+  return raw.replace(/^[\s"'“”「」：:]+/, "").replace(/[\s"'“”「」：:]+$/, "").replace(/^(数据评价|评价|结论)[：:]\s*/, "").trim();
+}
+async function callLlmForEvaluation(ctx, prompt) {
+  try {
+    if (!ctx || typeof ctx.get !== "function") return null;
+    const llm = ctx.get("llm");
+    if (!llm || typeof llm.stream !== "function") return null;
+    const dm = ctx.get("agentDefaultModel");
+    const sel = dm?.currentSelection?.();
+    if (!sel || !sel.provider || !sel.model) return null;
+    let text = "";
+    for await (const chunk of llm.stream({
+      provider: sel.provider,
+      model: sel.model,
+      system: EVAL_SYSTEM,
+      messages: [
+        {
+          id: randomUUID(),
+          role: "user",
+          content: [{ type: "text", text: prompt }],
+          source: { kind: "plugin", plugin: "ecommerce-analyst" }
+        }
+      ],
+      maxTokens: 160,
+      temperature: 0.6
+    })) {
+      if (chunk.type === "text-delta" && typeof chunk.text === "string") text += chunk.text;
+      else if (chunk.type === "finish" && chunk.reason && (chunk.reason.kind === "error" || chunk.reason.kind === "aborted")) return null;
+    }
+    const cleaned = cleanEvaluationText(text);
+    if (cleaned.length < 40) return null;
+    return cleaned.length > 80 ? cleaned.slice(0, 80) : cleaned;
+  } catch (err) {
+    console.error("[ecommerce-analyst] AI \u6570\u636E\u8BC4\u4EF7\u751F\u6210\u5931\u8D25\uFF1A", err);
+    return null;
+  }
+}
+
 // src/shop-api.ts
 var CORS_HEADERS = {
   "access-control-allow-origin": "*",
@@ -9210,7 +9465,46 @@ function readJsonBody(req) {
     req.on("error", reject);
   });
 }
-function registerShopApi(webServer, store) {
+var evaluationCache = /* @__PURE__ */ new Map();
+var evaluationPending = /* @__PURE__ */ new Set();
+async function generateEvaluation(cacheKey, cycle, summary, ctx) {
+  if (evaluationPending.has(cacheKey)) return;
+  evaluationPending.add(cacheKey);
+  try {
+    let text = await callLlmForEvaluation(ctx, evaluationPrompt(summary));
+    let source = "ai";
+    if (text === null || text.length < 40) {
+      text = ruleBasedEvaluation(summary);
+      source = "rule";
+    }
+    if (text.length > 80) text = text.slice(0, 80);
+    evaluationCache.set(cacheKey, { text, source, pending: false });
+  } catch (err) {
+    evaluationCache.set(cacheKey, { text: ruleBasedEvaluation(summary), source: "rule", pending: false });
+  } finally {
+    evaluationPending.delete(cacheKey);
+  }
+}
+function ensureEvaluation(cacheKey, cycle, summary, ctx) {
+  const cached = evaluationCache.get(cacheKey);
+  if (cached && !cached.pending) return cached;
+  if (!cached) {
+    evaluationCache.set(cacheKey, { text: ruleBasedEvaluation(summary), source: "rule", pending: true });
+  }
+  void generateEvaluation(cacheKey, cycle, summary, ctx);
+  return evaluationCache.get(cacheKey);
+}
+function prewarmEvaluations(store, ctx) {
+  const revision = store.getReportRevision();
+  const monthlyReport = store.getMonthlyReport();
+  const weeklyReport = store.getWeeklyReport();
+  for (const cycle of ["30d", "7d"]) {
+    const summary = buildEvaluationSummary(cycle, monthlyReport, weeklyReport);
+    if (summary === null) continue;
+    void generateEvaluation(cycle + ":" + revision, cycle, summary, ctx);
+  }
+}
+function registerShopApi(webServer, store, ctx = {}) {
   return webServer.register({
     kind: "prefix",
     path: "/ecommerce-api",
@@ -9240,6 +9534,7 @@ function registerShopApi(webServer, store) {
           if (parsed.weeklyReport !== void 0) {
             store.mergeWeeklyReport(parsed.weeklyReport);
           }
+          prewarmEvaluations(store, ctx);
           sendJson(res, 200, {
             ok: true,
             value: {
@@ -9272,7 +9567,13 @@ function registerShopApi(webServer, store) {
             };
           });
           const parsedList = await Promise.all(
-            files.map((f) => parseImportFile(f.filename, f.content, f.encoding))
+            files.map(async (f) => {
+              try {
+                return await parseImportFile(f.filename, f.content, f.encoding);
+              } catch (e) {
+                return { hint: "\u8DF3\u8FC7\u6587\u4EF6 " + f.filename + "\uFF1A" + (e instanceof Error ? e.message : String(e)) };
+              }
+            })
           );
           const snapshot = store.exportBackup();
           const monthlyParts = [];
@@ -9302,6 +9603,7 @@ function registerShopApi(webServer, store) {
           for (const w of weeklyParts) {
             store.mergeWeeklyReport(w);
           }
+          prewarmEvaluations(store, ctx);
           sendJson(res, 200, {
             ok: true,
             value: {
@@ -9326,6 +9628,22 @@ function registerShopApi(webServer, store) {
         }
         if (pathname === "/ecommerce-api/weekly-report") {
           sendJson(res, 200, { ok: true, value: store.getWeeklyReport(), revision: store.getReportRevision() });
+          return;
+        }
+        if (pathname === "/ecommerce-api/evaluation") {
+          const cycle = query.get("cycle") === "7d" ? "7d" : "30d";
+          const revision = store.getReportRevision();
+          const cacheKey = cycle + ":" + revision;
+          const summary = buildEvaluationSummary(cycle, store.getMonthlyReport(), store.getWeeklyReport());
+          if (summary === null) {
+            sendJson(res, 200, { ok: true, value: { cycle, evaluation: "", source: "rule", pending: false } });
+            return;
+          }
+          const entry = ensureEvaluation(cacheKey, cycle, summary, ctx);
+          sendJson(res, 200, {
+            ok: true,
+            value: { cycle, evaluation: entry.text, source: entry.source, pending: entry.pending }
+          });
           return;
         }
         if (pathname === "/ecommerce-api/actions") {
@@ -10141,7 +10459,7 @@ async function apply(ctx, config = {}) {
   if (webServer === void 0) {
     console.warn("[ecommerce-analyst] webServer \u670D\u52A1\u4E0D\u53EF\u7528\uFF0C\u8DF3\u8FC7\u5E97\u94FA\u5DE5\u4F5C\u53F0 API \u6CE8\u518C");
   } else {
-    const disposeApi = registerShopApi(webServer, store);
+    const disposeApi = registerShopApi(webServer, store, ctx);
     ctx.effect(() => disposeApi, "ecommerce: shop api routes");
     const disposeBase = injectApiBase(webServer);
     if (disposeBase !== void 0) {

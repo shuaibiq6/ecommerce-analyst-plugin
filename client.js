@@ -353,6 +353,109 @@ function sendToConversation(text) {
   }
   return { sent: false };
 }
+function getSessions() {
+  if (clientCtx === null || typeof clientCtx.get !== "function") return null;
+  try {
+    return clientCtx.get("sessions") ?? null;
+  } catch {
+    return null;
+  }
+}
+function currentSessionCwd(sessions) {
+  try {
+    const snap = sessions.list?.getSnapshot?.();
+    const cur = snap?.current;
+    if (cur !== null && cur !== void 0 && snap?.byId !== void 0) {
+      const cwd = snap.byId[cur]?.cwd;
+      if (typeof cwd === "string" && cwd !== "") return cwd;
+    }
+  } catch {
+  }
+  return void 0;
+}
+function currentWorkspaceId(sessions) {
+  try {
+    if (clientCtx === null || typeof clientCtx.get !== "function") return void 0;
+    const workspaces = clientCtx.get("workspaces");
+    const wsSnap = workspaces?.list?.getSnapshot?.();
+    const items = wsSnap?.items ?? [];
+    if (items.length === 0) return void 0;
+    const sessionsSnap = sessions.list?.getSnapshot?.();
+    const current = sessionsSnap?.current;
+    if (current !== null && current !== void 0) {
+      const byMember = items.find((w) => (w.sessionIds ?? []).includes(current))?.workspaceId;
+      if (byMember !== void 0) return byMember;
+      const cwd = sessionsSnap?.byId?.[current]?.cwd;
+      if (typeof cwd === "string" && cwd !== "") {
+        const byPath = items.find((w) => w.path === cwd)?.workspaceId;
+        if (byPath !== void 0) return byPath;
+      }
+    }
+    const recent = wsSnap?.recentWorkspaceId;
+    if (typeof recent === "string" && recent !== "") return recent;
+  } catch {
+  }
+  return void 0;
+}
+async function createSessionInCurrentGroup(sessions) {
+  try {
+    if (typeof sessions.create !== "function") return null;
+    const workspaceId = currentWorkspaceId(sessions);
+    const cwd = workspaceId === void 0 ? currentSessionCwd(sessions) : void 0;
+    const opts = workspaceId !== void 0 ? { workspaceId } : cwd !== void 0 ? { cwd } : {};
+    const id = await sessions.create(opts);
+    if (typeof id !== "string" || id === "") return null;
+    if (typeof sessions.open === "function") sessions.open(id);
+    return id;
+  } catch (err) {
+    console.error("[ecommerce-analyst] \u65B0\u5EFA\u4F1A\u8BDD\u5931\u8D25\uFF1A", err);
+    return null;
+  }
+}
+async function sendToSession(sessions, id, text) {
+  try {
+    if (typeof sessions.scope !== "function") return false;
+    const scoped = sessions.scope(id);
+    const conversation = scoped?.conversation;
+    if (conversation === void 0 || typeof conversation.send !== "function") return false;
+    await conversation.send(text);
+    return true;
+  } catch (err) {
+    console.error("[ecommerce-analyst] \u4F1A\u8BDD\u53D1\u9001\u5931\u8D25\uFF1A", err);
+    return false;
+  }
+}
+var linkWarnSessionId = null;
+async function openNewConversation(text) {
+  const sessions = getSessions();
+  if (sessions === null) {
+    const r2 = sendToConversation(text);
+    return { opened: r2.sent, newSession: false };
+  }
+  let id = linkWarnSessionId;
+  let stillExists = false;
+  try {
+    const snap = sessions.list?.getSnapshot?.();
+    stillExists = id !== null && snap?.byId !== void 0 && Object.prototype.hasOwnProperty.call(snap.byId, id);
+  } catch {
+  }
+  let newSession = false;
+  if (!stillExists) {
+    id = await createSessionInCurrentGroup(sessions);
+    newSession = id !== null;
+    if (id !== null) linkWarnSessionId = id;
+  } else if (id !== null && typeof sessions.open === "function") {
+    sessions.open(id);
+  }
+  if (id === null) {
+    const r2 = sendToConversation(text);
+    return { opened: r2.sent, newSession: false };
+  }
+  const sent = await sendToSession(sessions, id, text);
+  if (sent) return { opened: true, newSession };
+  const r = sendToConversation(text);
+  return { opened: r.sent, newSession };
+}
 var fullscreen = false;
 var fullscreenSubscribers = /* @__PURE__ */ new Set();
 function isFullscreen() {
@@ -958,6 +1061,26 @@ function useShopDeskData() {
       ok: result.sent,
       text: result.sent ? `\u5DF2\u5728\u4F1A\u8BDD\u6846\u751F\u6210\u6307\u4EE4\uFF1A\u5206\u6790\u300C${product.name}\u300D` : `\u5DF2\u590D\u5236\u5206\u6790\u6307\u4EE4\u5230\u526A\u8D34\u677F\uFF08\u4F1A\u8BDD\u6846\u672A\u8FDE\u63A5\uFF0C\u8BF7\u7C98\u8D34\u53D1\u9001\uFF09`
     });
+  }, []);
+  React3.useEffect(() => {
+    const onMessage = (event) => {
+      const data = event.data;
+      if (data === null || typeof data !== "object" || data.type !== "ecommerce:analyze-link") return;
+      const prompt = typeof data.prompt === "string" && data.prompt !== "" ? data.prompt : "";
+      if (prompt === "") {
+        setImportMsg({ ok: false, text: "\u94FE\u63A5\u9884\u8B66\u5206\u6790\u5931\u8D25\uFF1A\u672A\u6536\u5230\u5206\u6790\u63D0\u793A\u8BCD" });
+        return;
+      }
+      const name = typeof data.linkName === "string" && data.linkName !== "" ? data.linkName : "\u8BE5\u5546\u54C1";
+      void openNewConversation(prompt).then((r) => {
+        setImportMsg({
+          ok: r.opened,
+          text: r.newSession ? r.opened ? `\u5DF2\u5728\u5F53\u524D\u4F1A\u8BDD\u5206\u7EC4\u5F00\u542F\u5168\u65B0\u4F1A\u8BDD\u5E76\u53D1\u9001\u94FE\u63A5\u9884\u8B66\u5206\u6790\u6307\u4EE4\uFF1A\u5206\u6790\u300C${name}\u300D` : `\u5DF2\u65B0\u5EFA\u4F1A\u8BDD\uFF0C\u4F46\u53D1\u9001\u5931\u8D25\uFF0C\u5206\u6790\u6307\u4EE4\u5DF2\u590D\u5236\u5230\u526A\u8D34\u677F\uFF08\u5206\u6790\u300C${name}\u300D\uFF09` : r.opened ? `\u5DF2\u5728\u5F53\u524D\u4F1A\u8BDD\u4E2D\u53D1\u9001\u94FE\u63A5\u9884\u8B66\u5206\u6790\u6307\u4EE4\uFF1A\u5206\u6790\u300C${name}\u300D` : `\u4F1A\u8BDD\u670D\u52A1\u672A\u5C31\u7EEA\uFF0C\u5206\u6790\u6307\u4EE4\u5DF2\u590D\u5236\u5230\u526A\u8D34\u677F\uFF08\u5206\u6790\u300C${name}\u300D\uFF09`
+        });
+      });
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
   }, []);
   const doExport = React3.useCallback((type, scope) => {
     exportData(type, scope);
